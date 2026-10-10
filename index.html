@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Davizu Messenger</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111b21">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/intl-tel-input@23.0.12/build/css/intlTelInput.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:#111b21;color:#e9edef;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:20px}
+.card{width:100%;max-width:400px;text-align:center}
+.logo{width:96px;height:96px;border-radius:24px;margin:0 auto 16px;display:block;box-shadow:0 0 28px #00b4ff55}
+h1{font-size:26px;margin-bottom:6px}
+.sub{color:#8696a0;font-size:14px;margin-bottom:22px;line-height:1.4}
+.seg{display:flex;background:#202c33;border-radius:12px;padding:4px;margin-bottom:18px}
+.seg button{flex:1;border:0;background:none;color:#8696a0;padding:10px;border-radius:9px;font-size:15px;font-weight:600;cursor:pointer}
+.seg button.on{background:#00a884;color:#fff}
+.iti{width:100%;display:block;margin-bottom:12px}
+.iti input,.f{width:100%;background:#202c33;border:1px solid #2a3942;color:#e9edef;border-radius:10px;padding:14px;font-size:17px;outline:none}
+.f{margin-bottom:12px}
+.iti input:focus,.f:focus{border-color:#00a884}
+.iti__country-list{background:#202c33;color:#e9edef;border:1px solid #2a3942}
+.iti__country.iti__highlight,.iti__country:hover{background:#2a3942}
+.iti__dial-code{color:#8696a0}
+.iti__search-input{background:#111b21;color:#e9edef;border:1px solid #2a3942}
+.iti__selected-dial-code{color:#e9edef}
+.iti__arrow{border-top-color:#8696a0}
+button.main{width:100%;background:#00a884;color:#fff;border:0;border-radius:24px;padding:14px;font-size:16px;font-weight:700;cursor:pointer;margin-top:4px}
+button.main:disabled{opacity:.5}
+#msg{color:#f15c6d;font-size:13px;min-height:34px;margin-top:12px;line-height:1.4}
+.note{color:#8696a0;font-size:12px;margin-top:16px;line-height:1.5}
+.note a{color:#53bdeb}
+</style>
+</head>
+<body>
+<div class="card">
+  <img class="logo" src="icon-192.png" alt="Davizu">
+  <h1>Davizu Messenger</h1>
+  <p class="sub" id="sub">Log in with your phone number and password.</p>
+  <div class="seg"><button id="tLogin" class="on">Log in</button><button id="tSign">Create account</button></div>
+  <input class="f" id="name" placeholder="Your name" autocomplete="name" style="display:none">
+  <input id="phone" type="tel" placeholder="8012345678" autocomplete="tel-national">
+  <input class="f" id="pw" type="password" placeholder="Password (6+ characters)" autocomplete="current-password">
+  <button class="main" id="go">Log in</button>
+  <div id="msg"></div>
+  <p class="note">By continuing you agree to our <a href="privacy.html">Privacy Policy</a>.</p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/intl-tel-input@23.0.12/build/js/intlTelInput.min.js"></script>
+<script>
+const sb=supabase.createClient('https://matvlomlgauaysenwwpn.supabase.co','sb_publishable_W_6NnTaNIhH-nMxKw1y87Q_rh0thySR');
+const $=id=>document.getElementById(id);
+sb.auth.getSession().then(({data})=>{if(data&&data.session)location.replace('app.html');});
+if('serviceWorker' in navigator&&location.protocol.startsWith('http')){navigator.serviceWorker.register('sw.js').catch(()=>{});}
+
+const iti=window.intlTelInput($('phone'),{initialCountry:'ng',separateDialCode:true,countrySearch:true,nationalMode:true,
+  utilsScript:'https://cdn.jsdelivr.net/npm/intl-tel-input@23.0.12/build/js/utils.js'});
+
+let mode='login';
+function setMode(m){
+  mode=m;
+  $('tLogin').classList.toggle('on',m==='login');
+  $('tSign').classList.toggle('on',m==='signup');
+  $('name').style.display=m==='signup'?'block':'none';
+  $('go').textContent=m==='signup'?'Create account':'Log in';
+  $('sub').textContent=m==='signup'?'Create your Davizu account with your phone number.':'Log in with your phone number and password.';
+  $('pw').autocomplete=m==='signup'?'new-password':'current-password';
+  $('msg').textContent='';
+}
+$('tLogin').onclick=()=>setMode('login');
+$('tSign').onclick=()=>setMode('signup');
+
+$('go').onclick=async()=>{
+  $('msg').textContent='';
+  const dial=iti.getSelectedCountryData().dialCode;
+  const digits=$('phone').value.replace(/\D/g,'').replace(/^0+/,'');
+  const pw=$('pw').value,name=$('name').value.trim();
+  if(digits.length<6){$('msg').textContent='Enter your phone number without the leading 0.';return;}
+  if(pw.length<6){$('msg').textContent='Password must be at least 6 characters.';return;}
+  if(mode==='signup'&&!name){$('msg').textContent='Enter your name.';return;}
+  const phone='+'+dial+digits;
+  const email=dial+digits+'@users.davizu.app';
+  $('go').disabled=true;
+  try{
+    if(mode==='signup'){
+      const {error}=await sb.auth.signUp({email,password:pw,options:{data:{phone,name}}});
+      if(error){
+        if(/registered|already/i.test(error.message)) throw new Error('This number already has an account. Tap Log in.');
+        throw error;
+      }
+    }
+    const {data,error}=await sb.auth.signInWithPassword({email,password:pw});
+    if(error){
+      if(/confirm/i.test(error.message)) throw new Error('Email confirmation is still on in Supabase. Turn off "Confirm email" (Authentication > Sign In / Providers > Email).');
+      if(/invalid/i.test(error.message)) throw new Error('Wrong number or password.');
+      throw error;
+    }
+    location.replace('app.html');
+  }catch(e){
+    $('msg').textContent=e.message||'Something went wrong. Try again.';
+  }finally{$('go').disabled=false;}
+};
+$('pw').addEventListener('keydown',e=>{if(e.key==='Enter')$('go').click();});
+</script>
+</body>
+</html>
