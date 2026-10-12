@@ -5,6 +5,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      KS_PASS: ${{ secrets.KS_PASS }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -14,21 +16,71 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Check the signing password is set
+        run: |
+          if [ -z "$KS_PASS" ]; then echo "STOP: add the KS_PASS secret in GitHub (Settings > Secrets and variables > Actions)"; exit 1; fi
+          keytool -list -keystore davizu.keystore -storepass "$KS_PASS" > /dev/null || { echo "STOP: KS_PASS is wrong or davizu.keystore was not uploaded correctly"; exit 1; }
+      - name: Point the app at your live website
+        run: |
+          OWNER=$(echo "$GITHUB_REPOSITORY_OWNER" | tr 'A-Z' 'a-z')
+          URL="https://${OWNER}.github.io/${GITHUB_REPOSITORY#*/}/"
+          echo "Live website: $URL"
+          curl -sfL "${URL}index.html" -o /dev/null || { echo "STOP: your website is not live yet. Turn on GitHub Pages (Settings > Pages) and wait a minute."; exit 1; }
+          node -e "const fs=require('fs');const c=JSON.parse(fs.readFileSync('capacitor.config.json'));c.server={url:'$URL',cleartext:false};fs.writeFileSync('capacitor.config.json',JSON.stringify(c,null,2));"
       - name: Install dependencies
         run: npm install
       - name: Copy web files into www
         run: npm run build
       - name: Add Android
         run: npx cap add android
-      - name: Allow microphone for voice notes
+      - name: Allow microphone, camera and contacts
         run: |
-          sed -i 's#</manifest>#    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n</manifest>#' android/app/src/main/AndroidManifest.xml
+          sed -i 's#</manifest>#    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-permission android:name="android.permission.READ_CONTACTS" />\n</manifest>#' android/app/src/main/AndroidManifest.xml
+      - name: Use the Davizu logo as the app icon and splash screen
+        continue-on-error: true
+        run: |
+          mkdir -p assets
+          cp icon-1024.png assets/icon-only.png
+          cp splash-2732.png assets/splash.png
+          cp splash-2732.png assets/splash-dark.png
+          npx -y @capacitor/assets@3 generate --android --iconBackgroundColor '#00001c' --iconBackgroundColorDark '#00001c' --splashBackgroundColor '#00001c' --splashBackgroundColorDark '#00001c'
+      - name: Sign the app with the permanent Davizu key
+        run: |
+          cp davizu.keystore android/app/davizu.keystore
+          cat >> android/app/build.gradle <<'GRADLE'
+
+          android {
+              signingConfigs {
+                  davizu {
+                      storeFile file("davizu.keystore")
+                      storePassword System.getenv("KS_PASS")
+                      keyAlias "davizu"
+                      keyPassword System.getenv("KS_PASS")
+                  }
+              }
+              defaultConfig {
+                  versionCode 100 + (System.getenv("RUN_NUMBER") ?: "1").toInteger()
+                  versionName "1." + (System.getenv("RUN_NUMBER") ?: "1")
+              }
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.davizu
+                  }
+              }
+              lint {
+                  checkReleaseBuilds false
+                  abortOnError false
+              }
+          }
+          GRADLE
       - name: Sync web to Android
         run: npx cap sync android
       - name: Build APK
-        run: cd android && chmod +x gradlew && ./gradlew assembleDebug
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: cd android && chmod +x gradlew && ./gradlew assembleRelease
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Davizu-Messenger-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/release/app-release.apk
