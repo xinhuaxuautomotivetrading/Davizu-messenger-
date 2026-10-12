@@ -1,4 +1,4 @@
-const CACHE = 'davizu-messenger-1';
+const CACHE = 'davizu-messenger-3';
 const CORE = ['./', 'index.html', 'app.html', 'privacy.html', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
