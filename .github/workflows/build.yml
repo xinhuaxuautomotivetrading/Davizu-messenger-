@@ -33,9 +33,9 @@ jobs:
         run: npm run build
       - name: Add Android
         run: npx cap add android
-      - name: Allow microphone, camera and contacts
+      - name: Allow microphone, camera, contacts and notifications
         run: |
-          sed -i 's#</manifest>#    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-permission android:name="android.permission.READ_CONTACTS" />\n</manifest>#' android/app/src/main/AndroidManifest.xml
+          sed -i 's#</manifest>#    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-permission android:name="android.permission.READ_CONTACTS" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.VIBRATE" />\n</manifest>#' android/app/src/main/AndroidManifest.xml
       - name: Use the Davizu logo as the app icon and splash screen
         continue-on-error: true
         run: |
@@ -73,6 +73,9 @@ jobs:
               }
           }
           GRADLE
+      - name: Add the Firebase file (needed for push notifications)
+        run: |
+          if [ -f google-services.json ]; then cp google-services.json android/app/google-services.json; echo "Firebase file added"; else echo "No google-services.json found, push notifications will be off"; fi
       - name: Sync web to Android
         run: npx cap sync android
       - name: Build APK
