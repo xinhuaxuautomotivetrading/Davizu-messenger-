@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "291364349677",
+    "project_id": "davizu-5cec3",
+    "storage_bucket": "davizu-5cec3.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:291364349677:android:fca85bfe7a6f023ac10ee4",
+        "android_client_info": {
+          "package_name": "com.davizu.chat"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAMBY-ezm4_r6l9vMuiL8SUdSqcp2w7v0o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -111,6 +111,13 @@ header.h h1{font-size:21px;font-weight:600;flex:1}
 #svReply{display:none;align-items:center;gap:8px;padding:8px 12px calc(10px + env(safe-area-inset-bottom));background:#000}
 #svReply input{flex:1;min-width:0;background:#202c33;border:0;color:#fff;border-radius:22px;padding:12px 16px;font-size:16px;outline:none}
 #svf{cursor:pointer}
+#cap{bottom:0;padding:34px 20px 18px;background:linear-gradient(transparent,#000c);font-size:18px;line-height:1.35;z-index:1}
+#stEdit{position:fixed;inset:0;background:#000;z-index:55;display:none;flex-direction:column}
+#seTop{padding:calc(8px + env(safe-area-inset-top)) 8px 4px;display:flex}
+#seMedia{flex:1;min-height:0;display:flex;align-items:center;justify-content:center}
+#seMedia img,#seMedia video{max-width:100%;max-height:100%}
+#seBar{display:flex;align-items:center;gap:8px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:#000}
+#seBar input{flex:1;min-width:0;background:#202c33;border:0;color:#fff;border-radius:22px;padding:13px 16px;font-size:16px;outline:none}
 /* overlays */
 .ov{position:fixed;inset:0;background:#000a;display:none;z-index:40}
 #sheet{align-items:flex-end;justify-content:center}
@@ -294,6 +301,11 @@ header.h h1{font-size:21px;font-weight:600;flex:1}
   <div id="cinfo"><div class="av" id="cAvC"></div><div id="cPeer" style="font-size:24px;font-weight:600"></div><div id="cStat" style="color:#9fd8ff;margin-top:6px"></div></div>
   <div id="ctrl"></div>
 </div>
+<div id="stEdit">
+  <div id="seTop"><button class="ib" id="seX" style="color:#fff;font-size:30px">&times;</button></div>
+  <div id="seMedia"></div>
+  <div id="seBar"><input id="seCap" placeholder="Add a caption..." maxlength="300" autocomplete="off"><button class="rb" id="seSend" data-ic="send" data-s="22"></button></div>
+</div>
 <div id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -340,7 +352,8 @@ const ICONS={
   megaphone:'<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>',
   arrowin:'<path d="M17 7L7 17M17 17H7V7"/>',
   arrowout:'<path d="M7 17L17 7M7 7h10v10"/>',
-  eye:'<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/>'
+  eye:'<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/>',
+  flip:'<path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15"/>'
 };
 function ic(n,s){return '<svg class="ico" viewBox="0 0 24 24" width="'+(s||22)+'" height="'+(s||22)+'" aria-hidden="true">'+(ICONS[n]||'')+'</svg>';}
 function hydrateIcons(){document.querySelectorAll('[data-ic]').forEach(el=>{if(!el.dataset.done){el.innerHTML=ic(el.dataset.ic,+el.dataset.s||22);el.dataset.done='1';}});}
@@ -403,7 +416,7 @@ function upload(blob,name,mime,onProgress){
   profile=p;profCache[me.id]=p;
   const {data:s}=await sb.from('dz_settings').select('*').eq('user_id',me.id).maybeSingle();
   if(s)settings=s;
-  buildNav();subscribeLive();route();
+  buildNav();subscribeLive();route();setupPush();checkPendingCall();
 })();
 
 function buildNav(){
@@ -793,10 +806,7 @@ function openStComposer(m){
 }
 $('stText').onclick=()=>openStComposer('text');
 $('stPhoto').onclick=()=>$('stFile').click();
-$('stFile').onchange=e=>{const f=e.target.files[0];e.target.value='';if(!f)return;stFileObj=f;openStComposer('media');
-  const u=URL.createObjectURL(f),v=f.type.startsWith('video');
-  $('stImg').style.display=v?'none':'block';$('stVid').style.display=v?'block':'none';
-  if(v)$('stVid').src=u;else $('stImg').src=u;$('stCap').value='';};
+$('stFile').onchange=e=>{const f=e.target.files[0];e.target.value='';if(!f)return;openStEdit(f);};
 $('stCancel').onclick=()=>{$('stCompose').style.display='none';stFileObj=null;};
 $('stPost').onclick=async()=>{
   $('stErr').textContent='';$('stPost').disabled=true;
@@ -861,6 +871,7 @@ async function loadSettings(){
     +'<div class="sec">Blocked contacts</div>'
     +(ps.length?ps.map(p=>'<div class="blk"><div class="av" style="width:36px;height:36px;font-size:15px">'+avHtml(p)+'</div><div>'+esc(dn(p))+'</div><button data-u="'+p.id+'">Unblock</button></div>').join(''):'<div style="color:#8696a0;padding:6px 16px;font-size:14px">No blocked contacts</div>')
     +'<div class="sec">Account</div>'
+    +'<a class="lnk" id="inv">'+ic('users',18)+' Invite friends</a>'
     +'<a class="lnk" href="privacy.html" target="_blank">Privacy policy</a>'
     +'<a class="lnk red" id="lo">Log out</a>'
     +'<a class="lnk red" id="da">Delete my account</a><div style="height:30px"></div>'
@@ -876,7 +887,8 @@ async function loadSettings(){
   $('swRR').onclick=async()=>{const on=!(settings.read_receipts!==false);settings.read_receipts=on;$('swRR').classList.toggle('on',on);
     const {error}=await sb.from('dz_settings').upsert({user_id:me.id,read_receipts:on},{onConflict:'user_id'});if(error)toast(error.message);};
   document.querySelectorAll('.blk button').forEach(b=>b.onclick=async()=>{await sb.from('dz_blocks').delete().eq('blocker_id',me.id).eq('blocked_id',b.dataset.u);loadSettings();});
-  $('lo').onclick=async()=>{await sb.auth.signOut();location.replace('index.html');};
+  $('inv').onclick=inviteFriends;
+  $('lo').onclick=async()=>{try{const pt=localStorage.getItem('davizu_push_token');if(pt)await sb.rpc('dz_clear_push_token',{t:pt});}catch(_){}await sb.auth.signOut();location.replace('index.html');};
   $('da').onclick=async()=>{
     if((prompt('This permanently deletes your account, profile and messages. Type DELETE to confirm.')||'')!=='DELETE')return;
     const {error}=await sb.rpc('dz_delete_account');if(error){toast(error.message);return;}
@@ -953,12 +965,13 @@ function renderNew(){
   if(dc.status==='unsupported')h+='<div class="empty">Contact sync works in the Davizu Messenger Android app.<br>You can still message any number above.</div>';
   else if(dc.status==='denied')h+='<div class="empty">Allow Davizu to see your contacts so you can find friends who are already here.<br><br><button class="b1" id="nAllow" style="padding:12px 22px;flex:none">Allow contacts</button><br><br><small>If nothing happens, open phone Settings &gt; Apps &gt; Davizu Messenger &gt; Permissions &gt; Contacts.</small></div>';
   else if(dc.status==='error')h+='<div class="empty">Could not read contacts.<br>'+esc(dc.msg||'')+'</div>';
-  else if(!pool.length)h+='<div class="empty">None of your '+(dc.total||0)+' contacts are on Davizu yet.<br>Invite them to install the app.</div>';
+  else if(!pool.length)h+='<div class="empty">None of your '+(dc.total||0)+' contacts are on Davizu yet.<br>Invite them to install the app.<br><br><button class="b1" id="nInvite" style="padding:12px 22px;flex:none">Invite friends</button></div>';
   h+=pool.map(p=>'<div class="item" data-id="'+p.id+'"><div class="av">'+avHtml(p)+'</div><div class="mid"><div class="nm">'+esc(p.devName||dn(p))+'</div><div class="lm">'+esc(p.devName&&p.name&&p.devName!==p.name?'~ '+p.name:(p.phone||''))+'</div></div>'+(multi?'<div class="chk '+(nSel.has(p.id)?'on':'')+'"></div>':'')+'</div>').join('');
   if(dc.status==='ok')h+='<div class="empty"><a id="nRefresh" style="color:#53bdeb;cursor:pointer">Refresh contacts</a></div>';
   $('nBody').innerHTML=h;updateBar();
 }
 $('nBody').addEventListener('click',async e=>{
+  if(e.target.closest('#nInvite')){inviteFriends();return;}
   if(e.target.closest('#nGroup')){go('#/new/group');return;}
   if(e.target.closest('#nNum')){openNumberModal(nMode==='chat'?'chat':'pick');return;}
   if(e.target.closest('#nAllow')||e.target.closest('#nRefresh')){
@@ -1067,7 +1080,7 @@ function renderCtrl(){
   if(call.incoming)h='<button class="cb red" id="cDecline">'+ic('hangup',28)+'</button><button class="cb green" id="cAccept">'+ic(call.kind==='video'?'video':'phone',28)+'</button>';
   else{
     h='<button class="cb '+(call.muted?'off':'')+'" id="cMute">'+ic(call.muted?'micoff':'mic',26)+'</button>';
-    if(call.kind==='video')h+='<button class="cb '+(call.camOff?'off':'')+'" id="cCam">'+ic(call.camOff?'videooff':'video',26)+'</button>';
+    if(call.kind==='video')h+='<button class="cb '+(call.camOff?'off':'')+'" id="cCam">'+ic(call.camOff?'videooff':'video',26)+'</button><button class="cb" id="cFlip">'+ic('flip',26)+'</button>';
     h+='<button class="cb red" id="cEnd">'+ic('hangup',28)+'</button>';
   }
   $('ctrl').innerHTML=h;
@@ -1076,7 +1089,7 @@ function showCallUI(text){
   const p=call.peer||{};
   $('call').style.display='flex';$('cPeer').textContent=dn(p);$('cAvC').innerHTML=avHtml(p);$('cStat').textContent=text;
   $('cinfo').classList.remove('mini');$('rv').style.display='none';$('lv').style.display='none';
-  if(call.local&&call.kind==='video'){$('lv').srcObject=call.local;$('lv').style.display='block';}
+  if(call.local&&call.kind==='video'){$('lv').srcObject=call.local;$('lv').style.display='block';$('lv').style.transform=(call.facing==='environment')?'none':'';}
   renderCtrl();
 }
 function makePc(){
@@ -1113,7 +1126,7 @@ async function startCall(kind,peer){
   let local;
   try{local=await navigator.mediaDevices.getUserMedia({audio:true,video:kind==='video'?{facingMode:'user'}:false});}
   catch(e){toast(kind==='video'?'Allow camera and microphone to make video calls':'Allow microphone access to make calls');return;}
-  call={kind,role:'caller',peer,local,iceQ:[],muted:false,camOff:false,id:null};
+  call={kind,role:'caller',peer,local,iceQ:[],muted:false,camOff:false,id:null,facing:'user'};
   showCallUI('Calling...');
   try{
     const pc=makePc();
@@ -1146,7 +1159,7 @@ async function acceptCall(){
   let local;
   try{local=await navigator.mediaDevices.getUserMedia({audio:true,video:call.kind==='video'?{facingMode:'user'}:false});}
   catch(e){toast('Allow microphone and camera to answer');declineCall();return;}
-  call.incoming=false;call.local=local;call.muted=false;call.camOff=false;
+  call.incoming=false;call.local=local;call.muted=false;call.camOff=false;call.facing='user';
   showCallUI('Connecting...');
   try{
     const pc=makePc();
@@ -1205,6 +1218,7 @@ $('ctrl').addEventListener('click',e=>{
   else if(b.id==='cEnd')endCall(call.connected?'ended':(call.role==='caller'?'missed':'rejected'));
   else if(b.id==='cMute'){call.muted=!call.muted;call.local.getAudioTracks().forEach(t=>t.enabled=!call.muted);renderCtrl();}
   else if(b.id==='cCam'){call.camOff=!call.camOff;call.local.getVideoTracks().forEach(t=>t.enabled=!call.camOff);renderCtrl();}
+  else if(b.id==='cFlip')flipCamera();
 });
 $('callV').onclick=()=>startCall('voice',cur&&cur.other);
 $('callVid').onclick=()=>startCall('video',cur&&cur.other);
@@ -1321,6 +1335,96 @@ async function showViewers(){
   $('sheet').addEventListener('click',rel);
 }
 $('svf').onclick=showViewers;
+
+/* ---------- invite friends (free word of mouth) ---------- */
+const INVITE_URL='https://xinhuaxuautomotivetrading.github.io/Davizu-messenger-/download.html';
+async function inviteFriends(){
+  const text='Join me on Davizu Messenger - free chats, calls, groups and status. Download it here: '+INVITE_URL;
+  try{if(navigator.share){await navigator.share({title:'Davizu Messenger',text});return;}}
+  catch(e){if(e&&e.name==='AbortError')return;}
+  try{await navigator.clipboard.writeText(text);toast('Invite copied. Paste it in WhatsApp or anywhere.');}
+  catch(_){prompt('Copy this invite and send it to your friends',text);}
+}
+
+/* ---------- switch front / back camera in video calls ---------- */
+async function flipCamera(){
+  if(!call||call.kind!=='video'||!call.local||!call.pc)return;
+  const next=call.facing==='environment'?'user':'environment';
+  const keep=call.camOff;
+  call.local.getVideoTracks().forEach(t=>{t.stop();call.local.removeTrack(t);});
+  let ns=null,used=next;
+  try{ns=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:next}}});}
+  catch(e){
+    used=call.facing||'user';
+    try{ns=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:used}}});}catch(_){ns=null;}
+  }
+  if(!ns){toast('Could not switch the camera');return;}
+  const nt=ns.getVideoTracks()[0];nt.enabled=!keep;
+  const sender=call.pc.getSenders().find(x=>x.track&&x.track.kind==='video')||call.pc.getSenders().find(x=>!x.track);
+  try{if(sender)await sender.replaceTrack(nt);}catch(_){}
+  call.local.addTrack(nt);call.facing=used;
+  $('lv').srcObject=call.local;$('lv').style.transform=(used==='environment')?'none':'';
+  if(used!==next)toast('Could not switch the camera');
+}
+
+/* ---------- status: picture or video with caption (full screen editor) ---------- */
+function openStEdit(f){
+  if(f.size>50*1024*1024){toast('This file is over 50 MB. Choose a smaller file or a shorter video.');return;}
+  stFileObj=f;
+  const u=URL.createObjectURL(f);
+  $('seMedia').innerHTML=f.type.startsWith('video/')?'<video src="'+u+'" controls playsinline></video>':'<img src="'+u+'" alt="">';
+  $('seCap').value='';$('seSend').disabled=false;$('stEdit').style.display='flex';
+}
+function closeStEdit(){
+  $('stEdit').style.display='none';
+  const v=$('seMedia').querySelector('video');if(v)v.pause();
+  $('seMedia').innerHTML='';stFileObj=null;
+}
+async function postMediaStatus(){
+  const f=stFileObj;if(!f)return;
+  const cap=$('seCap').value.trim();
+  $('seSend').disabled=true;
+  try{
+    const url=await upload(f,f.name,f.type,p=>toast('Posting status... '+p+'%'));
+    const {error}=await sb.from('dz_statuses').insert({user_id:me.id,kind:f.type.startsWith('video/')?'video':'image',media_url:url,body:cap||null});
+    if(error)throw error;
+    closeStEdit();toast('Status posted');loadStatus();
+  }catch(e){toast('Could not post: '+(e.message||'try again'));$('seSend').disabled=false;}
+}
+$('seX').onclick=closeStEdit;
+$('seSend').onclick=postMediaStatus;
+$('seCap').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();postMediaStatus();}});
+
+/* ---------- push notifications (messages and calls when the app is closed) ---------- */
+async function setupPush(){
+  const cap=window.Capacitor,P=cap&&cap.Plugins&&cap.Plugins.PushNotifications;
+  if(!P||!(cap.isNativePlatform&&cap.isNativePlatform()))return;
+  try{
+    await P.createChannel({id:'messages',name:'Messages',description:'New messages',importance:4,visibility:0,vibration:true});
+    await P.createChannel({id:'calls',name:'Calls',description:'Incoming voice and video calls',importance:5,visibility:1,vibration:true});
+  }catch(_){}
+  try{
+    P.addListener('registration',async t=>{
+      try{localStorage.setItem('davizu_push_token',t.value);await sb.rpc('dz_save_push_token',{t:t.value});}catch(_){}
+    });
+    P.addListener('registrationError',e=>console.log('push registration error',JSON.stringify(e)));
+    P.addListener('pushNotificationActionPerformed',a=>{handlePushTap((a&&a.notification&&a.notification.data)||{});});
+    let perm=await P.checkPermissions();
+    if(perm.receive==='prompt'||perm.receive==='prompt-with-rationale')perm=await P.requestPermissions();
+    if(perm.receive==='granted')await P.register();
+  }catch(e){console.log('push setup error',e&&e.message);}
+}
+function handlePushTap(d){
+  if(d.type==='message'&&d.chat_id){go('#/chat/'+d.chat_id);}
+  else if(d.type==='call'){checkPendingCall();}
+}
+async function checkPendingCall(){
+  if(!me||call)return;
+  const since=new Date(Date.now()-40000).toISOString();
+  const {data}=await sb.from('dz_calls').select('*').eq('callee_id',me.id).eq('status','ringing').gt('created_at',since).order('created_at',{ascending:false}).limit(1);
+  if(data&&data[0])onIncoming(data[0]);
+}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkPendingCall();});
 </script>
 </body>
 </html>
